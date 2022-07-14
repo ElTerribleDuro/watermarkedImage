@@ -1,0 +1,205 @@
+package watermark
+
+import java.awt.Color
+import java.awt.image.BufferedImage
+import java.io.File
+import javax.imageio.ImageIO
+import kotlin.system.exitProcess
+
+fun main() {
+    println("Input the image filename:")
+    val imageName = readln()
+    val imageFile = File(imageName)
+    if(!imageFile.exists()) {
+        println("The file $imageName doesn't exist.")
+        exitProcess(1)
+    }
+    val image: BufferedImage = ImageIO.read(imageFile)
+    val imagePixel = image.colorModel.pixelSize
+    val imageColorComponents = image.colorModel.numColorComponents
+    val imageWidth = image.width
+    val imageHeight = image.height
+    when {
+        imageColorComponents < 3 -> {
+            println("The number of image color components isn't 3.")
+            exitProcess(1)
+        }
+        imagePixel != 24 && imagePixel != 32 -> {
+            println("The image isn't 24 or 32-bit.")
+            exitProcess(1)
+        }
+    }
+    println("Input the watermark image filename:")
+    val waterName = readln()
+    val waterFile = File(waterName)
+    if(!waterFile.exists()) {
+        println("The file $waterName doesn't exist.")
+        exitProcess(1)
+    }
+    val water: BufferedImage = ImageIO.read(waterFile)
+    val waterPixel = water.colorModel.pixelSize
+    val waterColorComponents = water.colorModel.numColorComponents
+    val waterWidth = water.width
+    val waterHeight = water.height
+    var alphaChannel = false
+    when{
+        waterColorComponents < 3 -> {
+            println("The number of watermark color components isn't 3.")
+            exitProcess(1)
+        }
+        waterPixel  != 24 && waterPixel != 32 -> {
+            println("The watermark isn't 24 or 32-bit.")
+            exitProcess(1)
+        }
+        imageWidth < waterWidth || imageHeight < waterHeight -> {
+            println("The watermark's dimensions are larger.")
+            exitProcess(1)
+        }
+    }
+    val trans = water.transparency
+    var colorChosen = Color(0,0,0)
+    var useColor = false
+    if(trans == 3) {
+        println("Do you want to use the watermark's Alpha channel?")
+        if(readln().equals("yes", false)) {
+            alphaChannel = true
+        }
+    } else {
+        println("Do you want to set a transparency color?")
+        if(readln().equals("yes",false)) {
+            useColor = true
+            println("Input a transparency color ([Red] [Green] [Blue]):")
+            val regex = Regex("..?.? ..?.? ..?.?")
+            val inputColor = readln()
+            if( regex.matches(inputColor)){
+                val arrayTemp = inputColor.split(' ')
+                try {
+                    val arrayColor: Array<Int> = arrayOf(0,0,0)
+                    for (i in 0 until 3){
+                        if(arrayTemp[i].toInt() in 0 .. 255){
+                            arrayColor[i] = arrayTemp[i].toInt()
+                        } else {
+                            println("The transparency color input is invalid.")
+                            exitProcess(1)
+                        }
+                    }
+                    colorChosen = Color(arrayColor[0], arrayColor[1], arrayColor[2])
+                }
+                catch (e: Exception){
+                    println("The transparency color input is invalid.")
+                    exitProcess(1)
+                }
+            } else {
+                println("The transparency color input is invalid.")
+                exitProcess(1)
+            }
+
+        }
+    }
+
+    println("Input the watermark transparency percentage (Integer 0-100):")
+    val transparency = readln()
+    val temp = transparency.toIntOrNull()
+    when {
+        temp == null -> {
+            println("The transparency percentage isn't an integer number.")
+            exitProcess(1)
+        }
+        temp > 100 || temp < 0 -> {
+            println("The transparency percentage is out of range.")
+            exitProcess(1)
+        }
+    }
+    val weight = transparency.toInt()
+
+    val DiffX = imageWidth - waterWidth
+    val DiffY = imageHeight - waterHeight
+    var posX = 0
+    var posY = 0
+
+    println("Choose the position method (single, grid):")
+    val position = readln()
+    if(!position.equals("single",false) && !position.equals("grid",false)) {
+        println("The position method input is invalid.")
+        exitProcess(1)
+    } else {
+        if (position.equals("single", false)) {
+            println("Input the watermark position ([x 0-$DiffX] [y 0-$DiffY]):")
+            val posStr = readln()
+            try{
+                posX = posStr.split(' ')[0].toInt()
+                posY = posStr.split(' ')[1].toInt()
+            }
+            catch (e: Exception) {
+                println("The position input is invalid.")
+                exitProcess(1)
+            }
+            if (posX !in 0..DiffX || posY !in 0..DiffY) {
+                println("The position input is out of range.")
+                exitProcess(1)
+            }
+        }
+
+    }
+
+
+    println("Input the output image filename (jpg or png extension):")
+    val outputImage = readln()
+    if(!outputImage.endsWith(".jpg") && !outputImage.endsWith(".png")) {
+        println("The output file extension isn't \"jpg\" or \"png\".")
+        exitProcess(1)
+    }
+
+    val watermarkedImage = BufferedImage(imageWidth, imageHeight,BufferedImage.TYPE_INT_RGB)
+
+
+    for(x in 0 until image.width) {
+        for(y in 0 until image.height) {
+
+            val i = Color(image.getRGB(x,y))
+            var w = i
+
+            if(position.equals("single",false)) {
+
+                w = if (x in posX until posX + water.width && y in posY until water.height + posY) {
+                    if (alphaChannel) {
+                        Color(water.getRGB(x - posX, y - posY), true)
+                    } else {
+                        Color(water.getRGB(x - posX, y - posY))
+                    }
+                } else {
+                    i
+                }
+            } else {
+                val newX = if(x !in 0 until water.width) x % water.width else x
+                val newY = if(y !in 0 until water.height) y % water.height else y
+                w = if (alphaChannel) {
+                    Color(water.getRGB(newX, newY), true)
+                } else {
+                    Color(water.getRGB(newX, newY))
+                }
+            }
+
+            val color = if(w.alpha == 0) {
+                i
+            }
+            else {
+                if (useColor && w == colorChosen) {
+                    i
+                }
+                else  {
+                    Color(
+                        (weight * w.red + (100 - weight) * i.red) / 100,
+                        (weight * w.green + (100 - weight) * i.green) / 100,
+                        (weight * w.blue + (100 - weight) * i.blue) / 100
+                    )
+                }
+            }
+            watermarkedImage.setRGB(x,y,color.rgb)
+        }
+    }
+    val outputFile = File(outputImage)
+    ImageIO.write(watermarkedImage,outputFile.extension ,outputFile)
+    println("The watermarked image $outputImage has been created.")
+
+}
